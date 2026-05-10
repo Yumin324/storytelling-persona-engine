@@ -1,4 +1,5 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -6,7 +7,8 @@ from app.database import get_db
 from app.models import AdSession, ProductionJob, Scene, Status
 from app.schemas import ProductionJobRead, SceneRead
 from app.services.compliance_service import ComplianceService
-from app.services.production_prompt_service import run_production_prompt_job
+from app.services.production_prompt_service import retry_scene_asset_generation, run_production_prompt_job
+from app.services.storage_service import StorageService
 
 router = APIRouter()
 
@@ -59,6 +61,43 @@ def get_production_job_scenes(job_id: int, db: Session = Depends(get_db)) -> lis
     if job is None:
         raise HTTPException(status_code=404, detail="Production job not found.")
     return list(db.scalars(select(Scene).where(Scene.job_id == job_id).order_by(Scene.scene_number)))
+
+
+@router.post("/production/scenes/{scene_id}/retry", response_model=SceneRead)
+def retry_scene(scene_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db)) -> Scene:
+    scene = db.get(Scene, scene_id)
+    if scene is None:
+        raise HTTPException(status_code=404, detail="Scene not found.")
+
+    scene.status = Status.retrying
+    scene.error_message = None
+    job = db.get(ProductionJob, scene.job_id)
+    if job is not None:
+        job.status = Status.running
+        job.current_step = f"Retrying Scene {scene.scene_number:02d}"
+        job.error_message = None
+    db.commit()
+    db.refresh(scene)
+    background_tasks.add_task(retry_scene_asset_generation, scene.id)
+    return scene
+
+
+@router.get("/production/scenes/{scene_id}/download")
+def download_scene(scene_id: int, db: Session = Depends(get_db)) -> FileResponse:
+    scene = db.get(Scene, scene_id)
+    if scene is None:
+        raise HTTPException(status_code=404, detail="Scene not found.")
+    if not scene.zip_path:
+        raise HTTPException(status_code=404, detail="Scene ZIP is not available yet.")
+
+    try:
+        path = StorageService().path_from_relative(scene.zip_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid scene ZIP path.") from exc
+
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Scene ZIP file was not found.")
+    return FileResponse(path, filename=f"scene_{scene.scene_number:02d}_assets.zip", media_type="application/zip")
 
 
 def validate_production_session(session: AdSession) -> None:

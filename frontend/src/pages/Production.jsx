@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 
 import { fileUrl } from "../api/client.js"
 import { listPersonas } from "../api/personas.js"
-import { getProductionJob, getProductionScenes, startProduction } from "../api/production.js"
+import { getProductionJob, getProductionScenes, retryScene, sceneDownloadUrl, startProduction } from "../api/production.js"
 import { getSession } from "../api/sessions.js"
 import StatusBadge from "../components/StatusBadge.jsx"
 
@@ -68,15 +68,26 @@ export default function Production() {
     }
   }
 
+  async function handleRetryScene(sceneId) {
+    setPageError("")
+    try {
+      const updatedScene = await retryScene(sceneId)
+      setScenes((items) => items.map((scene) => (scene.id === updatedScene.id ? updatedScene : scene)))
+      if (job) setJob(await getProductionJob(job.id))
+    } catch (error) {
+      setPageError(error.message)
+    }
+  }
+
   return (
     <section className="grid gap-8">
       <div className="max-w-3xl">
         <p className="text-sm font-medium uppercase tracking-[0.18em] text-neutral-500">Production</p>
         <h1 className="mt-4 text-4xl font-semibold leading-tight text-neutral-950 sm:text-5xl">
-          Generate scene-level prompts for the production asset pipeline.
+          Generate scene-level assets for editing in CapCut.
         </h1>
         <p className="mt-4 text-base leading-7 text-neutral-600">
-          This stage creates the production prompt kit first. Image, video, and audio generation will follow in the next stage.
+          Production creates first-frame images, silent B-roll clips, voiceover audio, and downloadable scene ZIPs.
         </p>
       </div>
 
@@ -101,7 +112,7 @@ export default function Production() {
             session={session}
           />
           {job ? <ProgressPanel job={job} scenes={scenes} /> : null}
-          <ScenePromptGrid scenes={scenes} scriptScenes={scriptScenes} />
+          <ScenePromptGrid onRetry={handleRetryScene} scenes={scenes} scriptScenes={scriptScenes} />
         </>
       )}
     </section>
@@ -168,7 +179,7 @@ function ProgressPanel({ job, scenes }) {
     <section className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-neutral-950">Prompt Generation</h2>
+          <h2 className="text-lg font-semibold text-neutral-950">Asset Generation</h2>
           <p className="mt-1 text-sm text-neutral-600">{job.current_step || "Queued"}</p>
         </div>
         <StatusBadge status={job.status} />
@@ -185,7 +196,7 @@ function ProgressPanel({ job, scenes }) {
   )
 }
 
-function ScenePromptGrid({ scenes, scriptScenes }) {
+function ScenePromptGrid({ scenes, scriptScenes, onRetry }) {
   const displayScenes = scenes.length
     ? scenes
     : scriptScenes.map((scene, index) => ({
@@ -207,6 +218,7 @@ function ScenePromptGrid({ scenes, scriptScenes }) {
           <div className="mt-5 grid gap-4 text-sm leading-6 text-neutral-700">
             <PromptBlock title="Visual Direction" value={scene.script_visual} />
             <PromptBlock title="Voiceover" value={scene.script_voiceover} />
+            <MediaPreview scene={scene} />
             <PromptBlock title="First Frame Prompt" value={scene.image_prompt} />
             <PromptBlock title="Animation Prompt" value={scene.video_prompt} />
             <PromptBlock title="Voice Prompt" value={scene.voice_prompt} />
@@ -214,9 +226,66 @@ function ScenePromptGrid({ scenes, scriptScenes }) {
               <PromptBlock title="Safety Notes" value={scene.safety_notes_json.join("; ")} />
             ) : null}
             {scene.error_message ? <p className="rounded-2xl bg-red-50 p-3 text-red-800">{scene.error_message}</p> : null}
+            <div className="flex flex-wrap gap-3">
+              {scene.status === "failed" ? (
+                <button
+                  className="rounded-full border border-border bg-white px-4 py-2 text-sm font-medium text-neutral-900"
+                  onClick={() => onRetry(scene.id)}
+                  type="button"
+                >
+                  Retry
+                </button>
+              ) : null}
+              {scene.zip_path ? (
+                <a className="rounded-full bg-neutral-950 px-4 py-2 text-sm font-medium text-white" href={sceneDownloadUrl(scene.id)}>
+                  Download ZIP
+                </a>
+              ) : null}
+            </div>
           </div>
         </article>
       ))}
+    </div>
+  )
+}
+
+function MediaPreview({ scene }) {
+  return (
+    <div className="grid gap-4 md:grid-cols-3">
+      <div>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">First Frame</p>
+        {scene.first_frame_path ? (
+          <img alt={`Scene ${scene.scene_number} first frame`} className="aspect-video w-full rounded-2xl object-cover" src={fileUrl(scene.first_frame_path)} />
+        ) : (
+          <EmptyMedia label="Pending image" />
+        )}
+      </div>
+      <div>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">Video</p>
+        {scene.video_path ? (
+          <video className="aspect-video w-full rounded-2xl bg-neutral-950" controls src={fileUrl(scene.video_path)} />
+        ) : (
+          <EmptyMedia label="Pending video" />
+        )}
+      </div>
+      <div>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">Voiceover</p>
+        {scene.voice_path ? (
+          <div className="flex aspect-video items-center rounded-2xl bg-surface-muted p-3">
+            <audio className="w-full" controls src={fileUrl(scene.voice_path)} />
+          </div>
+        ) : (
+          <EmptyMedia label="Pending audio" />
+        )}
+      </div>
+    </div>
+  )
+}
+
+function EmptyMedia({ label }) {
+  return (
+    <div className="flex aspect-video items-center justify-center rounded-2xl bg-surface-muted text-center text-sm text-neutral-500">
+      {label}
     </div>
   )
 }
