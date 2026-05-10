@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import init_db
-from app.routers import health
+from app.routers import health, voices
 from app.services.storage_service import StorageService
 
 
@@ -30,3 +30,4 @@ app.add_middleware(
 )
 
 app.include_router(health.router, prefix="/api", tags=["health"])
+app.include_router(voices.router, prefix="/api", tags=["voices"])
