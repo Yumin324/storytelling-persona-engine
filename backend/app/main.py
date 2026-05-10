@@ -1,12 +1,24 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.database import init_db
 from app.routers import health
+from app.services.storage_service import StorageService
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    StorageService().ensure_base_directories()
+    yield
 
 app = FastAPI(
     title="UGCLABs API",
     description="Backend foundation for AI-generated B-roll UGC production assets.",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(

@@ -22,6 +22,27 @@ cp .env.example backend/.env
 
 Fill in real provider credentials in `backend/.env`. Missing keys are reported by `/api/health`; they are never treated as successful generation readiness.
 
+## Backend Database And Storage
+
+The backend uses SQLite through SQLAlchemy. On FastAPI startup it creates the required tables for:
+
+- `personas`
+- `ad_sessions`
+- `production_jobs`
+- `scenes`
+- `api_logs`
+
+The startup hook also creates the local storage roots:
+
+```txt
+backend/storage/personas/
+backend/storage/sessions/
+backend/storage/jobs/
+backend/storage/uploads/
+```
+
+Generated assets will use deterministic paths such as `storage/personas/{persona_id}/`, `storage/sessions/{session_id}/`, and `storage/jobs/{job_id}/scene_XX/`. Storage helpers validate IDs and filenames so client-provided arbitrary paths cannot escape the configured storage root.
+
 ## Run Backend
 
 ```bash
