@@ -1,0 +1,6 @@
+{
+  "name": "environment_base",
+  "model": "GPT Image 2.0",
+  "purpose": "Generate a high-fidelity environment image for the ad setting.",
+  "prompt": "Create a photorealistic base environment image for a UGCLABs B-roll UGC ad. Primary environment: {{ environment.primary_environment }}. Time of day: {{ environment.time_of_day }}. Lighting style: {{ environment.lighting_style }}. Aesthetic: {{ environment.aesthetic }}. The environment must feel usable for phone-shot product B-roll, with correct perspective, physically accurate lighting, realistic scale, believable materials, practical surfaces, and natural imperfections. Keep the space clean enough for production but not overly staged or cinematic. No warped geometry, no AI smearing, no impossible furniture, no text, no logos, no watermarks, no UI, no product placement unless explicitly part of the environment, and no characters unless distant implied scale is necessary. The output should be a strong single source image for later environment reference sheet generation. Metadata timestamp: {{ meta.timestamp }}."
+}

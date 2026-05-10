@@ -1,0 +1,6 @@
+{
+  "name": "session_character_edit",
+  "model": "GPT Image 2.0",
+  "purpose": "Apply session outfit and accessories to a character reference sheet without changing identity.",
+  "prompt": "Edit the supplied persona character reference sheet for the current UGCLABs ad session. Persona gender: {{ persona.gender }}. Change only clothing and selected accessories. Session outfit: {{ session.outfit }}. Selected accessories: {{ session.accessories }}. Preserve the complete identity and reference sheet structure: face, facial geometry, skin tone, skin texture, hair, anatomy, body proportions, pose logic, lighting, camera angles, panel layout, and distinguishing features. Do not alter age, ethnicity, facial features, body type, hairstyle, hair color, skin quality, or expression beyond natural consistency. Do not add any accessory that is not listed in selected accessories. Do not add props or products. No text, labels, watermarks, annotations, or UI. Output a complete updated 3x3 character reference sheet with only outfit and accessory changes applied. Metadata timestamp: {{ meta.timestamp }}."
+}

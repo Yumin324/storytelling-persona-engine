@@ -1,0 +1,6 @@
+{
+  "name": "environment_reference",
+  "model": "GPT Image 2.0",
+  "purpose": "Generate a 3x3 environment reference sheet from the same environment.",
+  "prompt": "Using the supplied base environment image as the only environment source, create a 3x3 environment reference sheet for UGCLABs production. Preserve the same {{ environment.primary_environment }}, the same time of day {{ environment.time_of_day }}, the same lighting style {{ environment.lighting_style }}, and the same aesthetic {{ environment.aesthetic }} across all panels. Show consistent angles and usable B-roll viewpoints: wide establishing view, medium surface view, handheld phone-height view, product placement surface, background depth angle, close detail, left angle, right angle, and neutral centered angle. Maintain consistent light source, locked proportions, sealed color palette, realistic geometry, and believable materials. No characters, no text, no labels, no watermarks, no annotations, no UI, no warped perspective, no invented rooms, no dramatic cinematic polish. Output one clean 3x3 grid. Metadata timestamp: {{ meta.timestamp }}."
+}

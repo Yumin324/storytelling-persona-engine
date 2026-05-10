@@ -1,0 +1,6 @@
+{
+  "name": "product_reference",
+  "model": "GPT Image 2.0",
+  "purpose": "Generate a 9-angle product reference sheet from uploaded product images.",
+  "prompt": "Using only the uploaded product reference images for {{ product.name }}, create a 9-angle product reference sheet for UGCLABs scene generation. Product category: {{ product.category }}. Key visible product details must be extracted only from the source images. Preserve consistent materials, colors, labels, geometry, proportions, packaging, surface finish, and visible markings. Do not hallucinate product features, unreadable text, logos, claims, ingredients, buttons, ports, packaging sides, or materials that are not visible. If a surface or side is not visible in the uploaded images, keep it neutral and visually consistent rather than inventing details. Show front, back if visible, side, opposite side, top, angled three-quarter, close detail, hand-scale-safe view, and clean product-only view. Product consistency is more important than beauty. No people, no extra props, no promotional text, no watermarks, no UI, no annotations. Metadata timestamp: {{ meta.timestamp }}."
+}

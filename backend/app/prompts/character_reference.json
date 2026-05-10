@@ -1,0 +1,6 @@
+{
+  "name": "character_reference",
+  "model": "GPT Image 2.0",
+  "purpose": "Generate an identity-locked 3x3 character reference sheet from the persona base avatar image.",
+  "prompt": "Using the supplied base avatar image for persona {{ persona.name }} as the only identity source, create a 3x3 character reference sheet. Preserve absolute identity across every panel: facial geometry, skin texture, skin tone, eye shape, eye color, nose, mouth, lips, jawline, cheekbones, hair length, hair texture, default hair color, body proportions, and distinguishing features {{ persona.physical.distinguishing_features }}. Show useful production angles and framing variations: front, three-quarter left, three-quarter right, profile left, profile right, waist-up, closer face crop, relaxed neutral pose, and natural candid pose. Keep pose variation accurate without identity drift. Preserve source outfit if visible; do not invent a new outfit unless the source already implies one. Zero beautification, no face reshaping, no skin smoothing, no extra accessories, no props, no product, no text, no labels, no watermark, no annotations. Output one clean 3x3 contact sheet suitable as an identity reference for future GPT Image 2.0 generations. Metadata timestamp: {{ meta.timestamp }}."
+}
