@@ -51,6 +51,12 @@ class StorageService:
         safe_path = self._safe_path(path)
         return safe_path.relative_to(self.root).as_posix()
 
+    def path_from_relative(self, relative_path: str) -> Path:
+        path = Path(relative_path)
+        if path.is_absolute() or ".." in path.parts:
+            raise ValueError("relative path is invalid")
+        return self._safe_path(self.root / path)
+
     def _ensure_id_dir(self, category: str, entity_id: int) -> Path:
         self._validate_positive_int(entity_id, f"{category}_id")
         path = self.root / category / str(entity_id)

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models import Status
 
@@ -23,6 +23,14 @@ class PersonaBase(BaseModel):
     physical_json: JsonDict = Field(default_factory=dict)
     voice_json: JsonDict = Field(default_factory=dict)
     personality_json: JsonDict = Field(default_factory=dict)
+
+    @field_validator("gender")
+    @classmethod
+    def validate_gender(cls, value: str) -> str:
+        normalized = value.strip()
+        if normalized not in {"Male", "Female"}:
+            raise ValueError("gender must be Male or Female")
+        return normalized
 
 
 class PersonaCreate(PersonaBase):
@@ -46,6 +54,16 @@ class PersonaRead(PersonaBase, TimestampedResponse):
     reference_sheet_path: str | None
     status: Status
     error_message: str | None
+
+
+class PersonaGenerationJobRead(TimestampedResponse):
+    id: int
+    persona_id: int
+    status: Status
+    current_step: str | None
+    error_message: str | None
+    started_at: datetime | None
+    completed_at: datetime | None
 
 
 class AdSessionBase(BaseModel):
