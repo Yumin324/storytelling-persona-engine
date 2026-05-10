@@ -161,6 +161,7 @@ class SceneUpdate(BaseModel):
     image_prompt: str | None = None
     video_prompt: str | None = None
     voice_prompt: str | None = None
+    safety_notes_json: list[str] | None = None
     first_frame_path: str | None = None
     video_path: str | None = None
     voice_path: str | None = None
@@ -174,6 +175,7 @@ class SceneRead(SceneBase, TimestampedResponse):
     image_prompt: str | None
     video_prompt: str | None
     voice_prompt: str | None
+    safety_notes_json: list[str] | None
     first_frame_path: str | None
     video_path: str | None
     voice_path: str | None

@@ -1,6 +1,6 @@
 from collections.abc import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import get_settings
@@ -36,3 +36,19 @@ def init_db() -> None:
     from app import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    _ensure_sqlite_columns()
+
+
+def _ensure_sqlite_columns() -> None:
+    if not settings.database_url.startswith("sqlite"):
+        return
+
+    inspector = inspect(engine)
+    table_names = set(inspector.get_table_names())
+    if "scenes" not in table_names:
+        return
+
+    scene_columns = {column["name"] for column in inspector.get_columns("scenes")}
+    with engine.begin() as connection:
+        if "safety_notes_json" not in scene_columns:
+            connection.execute(text("ALTER TABLE scenes ADD COLUMN safety_notes_json JSON"))

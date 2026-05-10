@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import init_db
-from app.routers import files, health, personas, sessions, voices
+from app.routers import files, health, personas, production, sessions, voices
 from app.services.storage_service import StorageService
 
 
@@ -33,4 +33,5 @@ app.include_router(health.router, prefix="/api", tags=["health"])
 app.include_router(voices.router, prefix="/api", tags=["voices"])
 app.include_router(personas.router, prefix="/api", tags=["personas"])
 app.include_router(sessions.router, prefix="/api", tags=["sessions"])
+app.include_router(production.router, prefix="/api", tags=["production"])
 app.include_router(files.router, prefix="/api", tags=["files"])

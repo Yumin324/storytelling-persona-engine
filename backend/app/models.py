@@ -91,8 +91,11 @@ class AdSession(TimestampMixin, Base):
         back_populates="session",
         cascade="all, delete-orphan",
     )
-    production_jobs: Mapped[list["ProductionJob"]] = relationship(back_populates="session")
-    scenes: Mapped[list["Scene"]] = relationship(back_populates="session")
+    production_jobs: Mapped[list["ProductionJob"]] = relationship(
+        back_populates="session",
+        cascade="all, delete-orphan",
+    )
+    scenes: Mapped[list["Scene"]] = relationship(back_populates="session", cascade="all, delete-orphan")
 
 
 class SessionReferenceJob(TimestampMixin, Base):
@@ -122,7 +125,7 @@ class ProductionJob(TimestampMixin, Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     session: Mapped[AdSession] = relationship(back_populates="production_jobs")
-    scenes: Mapped[list["Scene"]] = relationship(back_populates="job")
+    scenes: Mapped[list["Scene"]] = relationship(back_populates="job", cascade="all, delete-orphan")
 
 
 class Scene(TimestampMixin, Base):
@@ -137,6 +140,7 @@ class Scene(TimestampMixin, Base):
     image_prompt: Mapped[str | None] = mapped_column(Text)
     video_prompt: Mapped[str | None] = mapped_column(Text)
     voice_prompt: Mapped[str | None] = mapped_column(Text)
+    safety_notes_json: Mapped[list | None] = mapped_column(JSON)
     first_frame_path: Mapped[str | None] = mapped_column(String(500))
     video_path: Mapped[str | None] = mapped_column(String(500))
     voice_path: Mapped[str | None] = mapped_column(String(500))

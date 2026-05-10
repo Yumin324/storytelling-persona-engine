@@ -71,7 +71,7 @@ const initialProduct = {
   custom_cta: "",
 }
 
-export default function Studio() {
+export default function Studio({ onNavigate }) {
   const [personas, setPersonas] = useState([])
   const [selectedPersona, setSelectedPersona] = useState(null)
   const [session, setSession] = useState(null)
@@ -143,11 +143,13 @@ export default function Studio() {
       const updated = await updateSession(session.id, payload)
       setSession(updated)
       setScriptDraft(updated.script_json)
+      rememberSession(updated.id)
       return updated
     }
     const created = await createSession(payload)
     setSession(created)
     setScriptDraft(created.script_json)
+    rememberSession(created.id)
     return created
   }
 
@@ -420,6 +422,10 @@ export default function Studio() {
           <button
             className="mt-3 w-full rounded-full bg-neutral-950 px-5 py-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:bg-neutral-300"
             disabled={!canContinueToProduction}
+            onClick={() => {
+              if (session?.id) rememberSession(session.id)
+              onNavigate?.("production")
+            }}
             type="button"
           >
             Continue to Production
@@ -634,6 +640,10 @@ function normalizedProduct(product) {
 
 function labelize(value) {
   return value.replaceAll("_", " ").replace(/\b\w/g, (character) => character.toUpperCase())
+}
+
+function rememberSession(sessionId) {
+  window.localStorage.setItem("ugclabs_active_session_id", String(sessionId))
 }
 
 function countWords(text) {

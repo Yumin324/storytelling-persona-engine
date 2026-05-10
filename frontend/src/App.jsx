@@ -17,7 +17,7 @@ export default function App() {
 
   return (
     <Layout tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab}>
-      <ActivePage />
+      <ActivePage onNavigate={setActiveTab} />
     </Layout>
   )
 }
