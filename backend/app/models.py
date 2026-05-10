@@ -47,7 +47,7 @@ class Persona(TimestampMixin, Base):
     status: Mapped[Status] = mapped_column(Enum(Status), default=Status.draft, nullable=False)
     error_message: Mapped[str | None] = mapped_column(Text)
 
-    ad_sessions: Mapped[list["AdSession"]] = relationship(back_populates="persona")
+    ad_sessions: Mapped[list["AdSession"]] = relationship(back_populates="persona", cascade="all, delete-orphan")
     generation_jobs: Mapped[list["PersonaGenerationJob"]] = relationship(
         back_populates="persona",
         cascade="all, delete-orphan",
@@ -87,8 +87,26 @@ class AdSession(TimestampMixin, Base):
     error_message: Mapped[str | None] = mapped_column(Text)
 
     persona: Mapped[Persona] = relationship(back_populates="ad_sessions")
+    reference_jobs: Mapped[list["SessionReferenceJob"]] = relationship(
+        back_populates="session",
+        cascade="all, delete-orphan",
+    )
     production_jobs: Mapped[list["ProductionJob"]] = relationship(back_populates="session")
     scenes: Mapped[list["Scene"]] = relationship(back_populates="session")
+
+
+class SessionReferenceJob(TimestampMixin, Base):
+    __tablename__ = "session_reference_jobs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("ad_sessions.id"), nullable=False, index=True)
+    status: Mapped[Status] = mapped_column(Enum(Status), default=Status.queued, nullable=False)
+    current_step: Mapped[str | None] = mapped_column(String(255))
+    error_message: Mapped[str | None] = mapped_column(Text)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    session: Mapped[AdSession] = relationship(back_populates="reference_jobs")
 
 
 class ProductionJob(TimestampMixin, Base):

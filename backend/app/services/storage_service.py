@@ -29,6 +29,9 @@ class StorageService:
         path.mkdir(parents=True, exist_ok=True)
         return self._safe_path(path)
 
+    def session_upload_path(self, session_id: int, filename: str) -> Path:
+        return self._asset_path(self.session_uploads_dir(session_id), filename)
+
     def job_dir(self, job_id: int) -> Path:
         return self._ensure_id_dir("jobs", job_id)
 

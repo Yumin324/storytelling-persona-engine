@@ -81,6 +81,7 @@ class AdSessionCreate(AdSessionBase):
 
 
 class AdSessionUpdate(BaseModel):
+    persona_id: int | None = None
     outfit: str | None = None
     accessories_json: list[Any] | None = None
     environment_json: JsonDict | None = None
@@ -99,6 +100,16 @@ class AdSessionRead(AdSessionBase, TimestampedResponse):
     product_ref_path: str | None
     status: Status
     error_message: str | None
+
+
+class SessionReferenceJobRead(TimestampedResponse):
+    id: int
+    session_id: int
+    status: Status
+    current_step: str | None
+    error_message: str | None
+    started_at: datetime | None
+    completed_at: datetime | None
 
 
 class ProductionJobBase(BaseModel):

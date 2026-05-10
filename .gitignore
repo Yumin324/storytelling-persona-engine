@@ -223,6 +223,10 @@ __marimo__/
 ugclabs.db
 backend/.env
 backend/storage/*
+backend/storage/personas/**
+backend/storage/sessions/**
+backend/storage/jobs/**
+backend/storage/uploads/**
 !backend/storage/.gitkeep
 !backend/storage/personas/
 !backend/storage/personas/.gitkeep
