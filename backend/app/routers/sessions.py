@@ -1,12 +1,16 @@
+from dataclasses import asdict
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.errors import ProviderError
 from app.models import AdSession, Persona, SessionReferenceJob, Status
-from app.schemas import AdSessionCreate, AdSessionRead, AdSessionUpdate, SessionReferenceJobRead
+from app.schemas import AdSessionCreate, AdSessionRead, AdSessionUpdate, ScriptUpdate, SessionReferenceJobRead
+from app.services.compliance_service import ComplianceService
 from app.services.session_reference_service import run_session_reference_job
+from app.services.script_generation_service import generate_compliant_script
 from app.services.storage_service import StorageService
 
 router = APIRouter()
@@ -130,6 +134,46 @@ def get_reference_job(session_id: int, job_id: int, db: Session = Depends(get_db
     if job is None or job.session_id != session_id:
         raise HTTPException(status_code=404, detail="Reference generation job not found.")
     return job
+
+
+@router.post("/sessions/{session_id}/generate-script", response_model=AdSessionRead)
+async def generate_script(session_id: int, db: Session = Depends(get_db)) -> AdSession:
+    session = db.get(AdSession, session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    try:
+        script = await generate_compliant_script(db, session)
+    except ProviderError as exc:
+        session.error_message = exc.message
+        db.commit()
+        raise HTTPException(status_code=503, detail=asdict(exc.normalized())) from exc
+    session.script_json = script
+    session.error_message = None
+    db.commit()
+    db.refresh(session)
+    return session
+
+
+@router.put("/sessions/{session_id}/script", response_model=AdSessionRead)
+def update_script(session_id: int, payload: ScriptUpdate, db: Session = Depends(get_db)) -> AdSession:
+    session = db.get(AdSession, session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    expected_scene_count = int((session.product_json or {}).get("number_of_scenes") or 0)
+    errors = ComplianceService().validate_script(payload.script_json, expected_scene_count)
+    if errors:
+        raise HTTPException(
+            status_code=422,
+            detail={"message": "Edited script failed compliance validation.", "errors": errors},
+        )
+
+    session.script_json = payload.script_json
+    session.error_message = None
+    db.commit()
+    db.refresh(session)
+    return session
 
 
 def validate_session_ready(session: AdSession, db: Session) -> None:

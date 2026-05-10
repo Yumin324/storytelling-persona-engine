@@ -5,8 +5,10 @@ import { listPersonas } from "../api/personas.js"
 import {
   createSession,
   generateReferences,
+  generateScript,
   getReferenceJob,
   getSession,
+  saveScript,
   updateSession,
   uploadProductImages,
 } from "../api/sessions.js"
@@ -33,6 +35,24 @@ const productCategories = [
   "Other",
 ]
 const ctaOptions = ["Link in bio", "Use code [X]", "Shop now", "Try for free", "Limited time offer", "Custom"]
+const bannedPhrases = [
+  "I tried",
+  "I've tried",
+  "I used",
+  "I've used",
+  "I started using",
+  "my results",
+  "my skin was",
+  "my hair was",
+  "changed my life",
+  "saved me",
+  "cured",
+  "guaranteed",
+  "miracle",
+  "before I found",
+  "I struggled with",
+  "I was suffering",
+]
 
 const initialEnvironment = {
   primary_environment: "Kitchen",
@@ -61,8 +81,10 @@ export default function Studio() {
   const [product, setProduct] = useState(initialProduct)
   const [uploadFiles, setUploadFiles] = useState([])
   const [referenceJob, setReferenceJob] = useState(null)
+  const [scriptDraft, setScriptDraft] = useState(null)
   const [isSaving, setIsSaving] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
+  const [isGeneratingScript, setIsGeneratingScript] = useState(false)
   const [pageError, setPageError] = useState("")
 
   useEffect(() => {
@@ -88,6 +110,8 @@ export default function Studio() {
   }, [referenceJob, session])
 
   const completedPersonas = useMemo(() => personas.filter((persona) => persona.status === "completed"), [personas])
+  const scriptWarnings = useMemo(() => validateScriptDraft(scriptDraft, Number(product.number_of_scenes)), [scriptDraft, product.number_of_scenes])
+  const canContinueToProduction = Boolean(scriptDraft) && scriptWarnings.length === 0
 
   async function loadPersonas() {
     try {
@@ -101,8 +125,9 @@ export default function Studio() {
     setSelectedPersona(persona)
     setPageError("")
     if (!session) return
-    const updated = await updateSession(session.id, { persona_id: persona.id })
-    setSession(updated)
+      const updated = await updateSession(session.id, { persona_id: persona.id })
+      setSession(updated)
+      setScriptDraft(updated.script_json)
   }
 
   async function saveSession() {
@@ -117,10 +142,12 @@ export default function Studio() {
     if (session) {
       const updated = await updateSession(session.id, payload)
       setSession(updated)
+      setScriptDraft(updated.script_json)
       return updated
     }
     const created = await createSession(payload)
     setSession(created)
+    setScriptDraft(created.script_json)
     return created
   }
 
@@ -143,6 +170,7 @@ export default function Studio() {
       const currentSession = session || (await saveSession())
       const updated = await uploadProductImages(currentSession.id, uploadFiles)
       setSession(updated)
+      setScriptDraft(updated.script_json)
       setUploadFiles([])
     } catch (error) {
       setPageError(error.message)
@@ -159,6 +187,36 @@ export default function Studio() {
       const job = await generateReferences(currentSession.id)
       setReferenceJob(job)
       setSession(await getSession(currentSession.id))
+    } catch (error) {
+      setPageError(error.message)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  async function handleGenerateScript() {
+    setIsGeneratingScript(true)
+    setPageError("")
+    try {
+      const currentSession = await saveSession()
+      const updated = await generateScript(currentSession.id)
+      setSession(updated)
+      setScriptDraft(updated.script_json)
+    } catch (error) {
+      setPageError(error.message)
+    } finally {
+      setIsGeneratingScript(false)
+    }
+  }
+
+  async function handleSaveScript() {
+    if (!session || !scriptDraft) return
+    setIsSaving(true)
+    setPageError("")
+    try {
+      const updated = await saveScript(session.id, scriptDraft)
+      setSession(updated)
+      setScriptDraft(updated.script_json)
     } catch (error) {
       setPageError(error.message)
     } finally {
@@ -278,6 +336,49 @@ export default function Studio() {
           <Section title="Generated References">
             <ReferenceGrid session={session} />
           </Section>
+
+          <Section title="Script">
+            <div className="flex flex-wrap gap-3">
+              <button
+                className="rounded-full bg-neutral-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:bg-neutral-300"
+                disabled={isGeneratingScript}
+                onClick={handleGenerateScript}
+                type="button"
+              >
+                {isGeneratingScript ? "Generating Script..." : scriptDraft ? "Regenerate Script" : "Generate Script"}
+              </button>
+              {scriptDraft ? (
+                <button
+                  className="rounded-full border border-border bg-white px-5 py-3 text-sm font-semibold text-neutral-900"
+                  disabled={isSaving}
+                  onClick={handleSaveScript}
+                  type="button"
+                >
+                  Save Script Edits
+                </button>
+              ) : null}
+            </div>
+            {scriptDraft ? (
+              <>
+                <ScriptEditor script={scriptDraft} setScript={setScriptDraft} />
+                {scriptWarnings.length ? (
+                  <div className="rounded-3xl border border-amber-100 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+                    {scriptWarnings.map((warning) => (
+                      <p key={warning}>{warning}</p>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="rounded-3xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800">
+                    Script passes local validation.
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="text-sm leading-6 text-neutral-600">
+                Generate a compliant scene script after product details are ready.
+              </p>
+            )}
+          </Section>
         </div>
       </div>
 
@@ -315,8 +416,80 @@ export default function Studio() {
         >
           {isSaving ? "Saving..." : "Save Session"}
         </button>
+        {scriptDraft ? (
+          <button
+            className="mt-3 w-full rounded-full bg-neutral-950 px-5 py-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:bg-neutral-300"
+            disabled={!canContinueToProduction}
+            type="button"
+          >
+            Continue to Production
+          </button>
+        ) : null}
       </aside>
     </section>
+  )
+}
+
+function ScriptEditor({ script, setScript }) {
+  const scenes = script?.scenes || []
+
+  function updateScene(index, key, value) {
+    const nextScenes = scenes.map((scene, sceneIndex) => (sceneIndex === index ? { ...scene, [key]: value } : scene))
+    setScript({ ...script, scenes: nextScenes })
+  }
+
+  return (
+    <div className="grid gap-4">
+      <label className="grid gap-2 text-sm font-medium text-neutral-800">
+        Persona Summary
+        <input
+          className="rounded-xl border border-border bg-white px-4 py-3 text-sm outline-none transition focus:border-border-strong"
+          onChange={(event) => setScript({ ...script, persona_summary: event.target.value })}
+          value={script.persona_summary || ""}
+        />
+      </label>
+      {scenes.map((scene, index) => {
+        const wordCount = countWords(scene.voiceover || "")
+        const banned = containsBannedLanguage(`${scene.visual || ""} ${scene.voiceover || ""}`)
+        const tooLong = wordCount > 30
+
+        return (
+          <article className="rounded-3xl border border-border bg-surface-muted p-4" key={`${scene.scene_id}-${index}`}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <input
+                className="rounded-xl border border-border bg-white px-3 py-2 text-sm font-semibold text-neutral-950"
+                onChange={(event) => updateScene(index, "scene_id", event.target.value)}
+                value={scene.scene_id || `Scene ${String(index + 1).padStart(2, "0")}`}
+              />
+              <div className="flex flex-wrap gap-2 text-xs">
+                <span className={`rounded-full px-2.5 py-1 ${tooLong ? "bg-amber-100 text-amber-900" : "bg-white text-neutral-700"}`}>
+                  {wordCount} words
+                </span>
+                {banned ? <span className="rounded-full bg-red-100 px-2.5 py-1 text-red-800">Banned language</span> : null}
+              </div>
+            </div>
+            <div className="mt-4 grid gap-4">
+              <label className="grid gap-2 text-sm font-medium text-neutral-800">
+                Visual
+                <textarea
+                  className="min-h-24 rounded-xl border border-border bg-white px-4 py-3 text-sm outline-none transition focus:border-border-strong"
+                  onChange={(event) => updateScene(index, "visual", event.target.value)}
+                  value={scene.visual || ""}
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-medium text-neutral-800">
+                Voiceover
+                <textarea
+                  className="min-h-20 rounded-xl border border-border bg-white px-4 py-3 text-sm outline-none transition focus:border-border-strong"
+                  onChange={(event) => updateScene(index, "voiceover", event.target.value)}
+                  value={scene.voiceover || ""}
+                />
+              </label>
+            </div>
+          </article>
+        )
+      })}
+    </div>
   )
 }
 
@@ -461,4 +634,35 @@ function normalizedProduct(product) {
 
 function labelize(value) {
   return value.replaceAll("_", " ").replace(/\b\w/g, (character) => character.toUpperCase())
+}
+
+function countWords(text) {
+  return (text || "").match(/[A-Za-z0-9]+(?:['-][A-Za-z0-9]+)?/g)?.length || 0
+}
+
+function containsBannedLanguage(text) {
+  const normalized = (text || "").toLowerCase().replace(/\s+/g, " ")
+  return bannedPhrases.some((phrase) => normalized.includes(phrase.toLowerCase()))
+}
+
+function validateScriptDraft(script, expectedSceneCount) {
+  if (!script) return []
+  const warnings = []
+  if (!Array.isArray(script.scenes)) {
+    return ["Script must include a scenes list."]
+  }
+  if (script.scenes.length !== expectedSceneCount) {
+    warnings.push(`Script must include exactly ${expectedSceneCount} scenes.`)
+  }
+  script.scenes.forEach((scene, index) => {
+    const label = scene.scene_id || `Scene ${String(index + 1).padStart(2, "0")}`
+    if (!scene.visual?.trim()) warnings.push(`${label} needs a visual direction.`)
+    if (!scene.voiceover?.trim()) warnings.push(`${label} needs a voiceover.`)
+    const wordCount = countWords(scene.voiceover || "")
+    if (wordCount > 30) warnings.push(`${label} voiceover is ${wordCount} words; keep it under 30.`)
+    if (containsBannedLanguage(`${scene.visual || ""} ${scene.voiceover || ""}`)) {
+      warnings.push(`${label} contains banned testimonial language.`)
+    }
+  })
+  return warnings
 }

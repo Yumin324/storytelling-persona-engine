@@ -102,6 +102,10 @@ class AdSessionRead(AdSessionBase, TimestampedResponse):
     error_message: str | None
 
 
+class ScriptUpdate(BaseModel):
+    script_json: JsonDict
+
+
 class SessionReferenceJobRead(TimestampedResponse):
     id: int
     session_id: int

@@ -42,3 +42,14 @@ export function generateReferences(sessionId) {
 export function getReferenceJob(sessionId, jobId) {
   return apiRequest(`/api/sessions/${sessionId}/reference-job/${jobId}`)
 }
+
+export function generateScript(sessionId) {
+  return apiRequest(`/api/sessions/${sessionId}/generate-script`, { method: "POST" })
+}
+
+export function saveScript(sessionId, scriptJson) {
+  return apiRequest(`/api/sessions/${sessionId}/script`, {
+    method: "PUT",
+    body: JSON.stringify({ script_json: scriptJson }),
+  })
+}
