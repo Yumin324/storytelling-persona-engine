@@ -24,6 +24,7 @@ class OpenAIImageService(ProviderService):
         input_images: list[str] | None,
         output_path: str,
         db: Session | None = None,
+        size: str | None = None,
     ) -> str:
         operation = "generate_image"
         target_path = ensure_output_path(output_path)
@@ -33,18 +34,17 @@ class OpenAIImageService(ProviderService):
             try:
                 async with httpx.AsyncClient(timeout=self.settings.api_timeout_image_seconds) as client:
                     if input_images:
-                        response = await self._create_image_edit(client, prompt, input_images)
+                        response = await self._create_image_edit(client, prompt, input_images, size=size)
                     else:
-                        response = await client.post(
-                            self.image_generation_url,
-                            headers=self._headers(),
-                            json={
-                                "model": self.settings.openai_image_model,
-                                "prompt": prompt,
-                                "n": 1,
-                                "output_format": "png",
-                            },
-                        )
+                        payload = {
+                            "model": self.settings.openai_image_model,
+                            "prompt": prompt,
+                            "n": 1,
+                            "output_format": "png",
+                        }
+                        if size:
+                            payload["size"] = size
+                        response = await client.post(self.image_generation_url, headers=self._headers(), json=payload)
                 self._raise_for_response(response, operation)
                 await self._save_image_response(response.json(), target_path, operation)
                 return str(target_path)
@@ -72,6 +72,7 @@ class OpenAIImageService(ProviderService):
                 "model": self.settings.openai_image_model,
                 "has_input_images": bool(input_images),
                 "output_path": str(target_path),
+                "size": size,
             },
             func=call_openai,
             retries=self.settings.api_retry_count,
@@ -86,6 +87,7 @@ class OpenAIImageService(ProviderService):
         client: httpx.AsyncClient,
         prompt: str,
         input_images: list[str],
+        size: str | None = None,
     ) -> httpx.Response:
         files = []
         opened_files = []
@@ -94,7 +96,7 @@ class OpenAIImageService(ProviderService):
                 path = Path(image_path)
                 opened = path.open("rb")
                 opened_files.append(opened)
-                files.append(("image", (path.name, opened, "image/png")))
+                files.append(("image[]", (path.name, opened, image_content_type(path))))
 
             data = {
                 "model": self.settings.openai_image_model,
@@ -102,6 +104,8 @@ class OpenAIImageService(ProviderService):
                 "n": "1",
                 "output_format": "png",
             }
+            if size:
+                data["size"] = size
             return await client.post(self.image_edit_url, headers=self._headers(), data=data, files=files)
         finally:
             for opened in opened_files:
@@ -139,3 +143,12 @@ class OpenAIImageService(ProviderService):
             retryable=False,
             raw_error_summary=str(first)[:500],
         )
+
+
+def image_content_type(path: Path) -> str:
+    return {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+    }.get(path.suffix.lower(), "image/png")

@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 from typing import Any
 
@@ -80,52 +81,19 @@ async def _run_session_reference_job(db: Session, job_id: int) -> None:
         context = build_session_prompt_context(session, persona)
         persona_reference_path = storage.path_from_relative(persona.reference_sheet_path)
 
-        job.current_step = "Generating session character reference"
-        db.commit()
-        session_character_prompt = renderer.render_template("session_character_edit.json", context)
-        session_character_path = storage.session_asset_path(session.id, "session_character_reference.png")
-        await image_service.generate_image(
-            session_character_prompt,
-            [str(persona_reference_path)],
-            str(session_character_path),
-            db=db,
-        )
-        session.session_character_ref_path = storage.relative_path(session_character_path)
+        job.current_step = "Generating reference assets"
         db.commit()
 
-        job.current_step = "Generating environment base image"
-        db.commit()
-        environment_base_prompt = renderer.render_template("environment_base.json", context)
-        environment_base_path = storage.session_asset_path(session.id, "environment_base.png")
-        await image_service.generate_image(environment_base_prompt, None, str(environment_base_path), db=db)
-        session.environment_base_path = storage.relative_path(environment_base_path)
-        db.commit()
-
-        job.current_step = "Generating environment reference sheet"
-        db.commit()
-        environment_reference_prompt = renderer.render_template("environment_reference.json", context)
-        environment_reference_path = storage.session_asset_path(session.id, "environment_reference.png")
-        await image_service.generate_image(
-            environment_reference_prompt,
-            [str(environment_base_path)],
-            str(environment_reference_path),
-            db=db,
+        generated_paths = await _generate_reference_assets(
+            session=session,
+            storage=storage,
+            renderer=renderer,
+            image_service=image_service,
+            context=context,
+            persona_reference_path=str(persona_reference_path),
         )
-        session.environment_ref_path = storage.relative_path(environment_reference_path)
-        db.commit()
-
-        job.current_step = "Generating product reference sheet"
-        db.commit()
-        product_reference_prompt = renderer.render_template("product_reference.json", context)
-        product_input_paths = [str(storage.path_from_relative(path)) for path in session.product_upload_paths_json]
-        product_reference_path = storage.session_asset_path(session.id, "product_reference.png")
-        await image_service.generate_image(
-            product_reference_prompt,
-            product_input_paths,
-            str(product_reference_path),
-            db=db,
-        )
-        session.product_ref_path = storage.relative_path(product_reference_path)
+        for field_name, relative_path in generated_paths.items():
+            setattr(session, field_name, relative_path)
 
         session.status = Status.completed
         session.error_message = None
@@ -142,3 +110,61 @@ async def _run_session_reference_job(db: Session, job_id: int) -> None:
         job.error_message = message
         job.completed_at = datetime.now(timezone.utc)
         db.commit()
+
+
+async def _generate_reference_assets(
+    *,
+    session: AdSession,
+    storage: StorageService,
+    renderer: PromptRenderer,
+    image_service: OpenAIImageService,
+    context: dict[str, Any],
+    persona_reference_path: str,
+) -> dict[str, str]:
+    results: dict[str, str] = {}
+
+    async def generate_character_reference() -> None:
+        if _stored_file_exists(storage, session.session_character_ref_path):
+            return
+        prompt = renderer.render_template("session_character_edit.json", context)
+        path = storage.session_asset_path(session.id, "session_character_reference.png")
+        await image_service.generate_image(prompt, [persona_reference_path], str(path))
+        results["session_character_ref_path"] = storage.relative_path(path)
+
+    async def generate_environment_references() -> None:
+        base_path = storage.session_asset_path(session.id, "environment_base.png")
+        if not _stored_file_exists(storage, session.environment_base_path):
+            base_prompt = renderer.render_template("environment_base.json", context)
+            await image_service.generate_image(base_prompt, None, str(base_path))
+            results["environment_base_path"] = storage.relative_path(base_path)
+        elif session.environment_base_path:
+            base_path = storage.path_from_relative(session.environment_base_path)
+
+        if _stored_file_exists(storage, session.environment_ref_path):
+            return
+        reference_prompt = renderer.render_template("environment_reference.json", context)
+        reference_path = storage.session_asset_path(session.id, "environment_reference.png")
+        await image_service.generate_image(reference_prompt, [str(base_path)], str(reference_path))
+        results["environment_ref_path"] = storage.relative_path(reference_path)
+
+    async def generate_product_reference() -> None:
+        if _stored_file_exists(storage, session.product_ref_path):
+            return
+        prompt = renderer.render_template("product_reference.json", context)
+        input_paths = [str(storage.path_from_relative(path)) for path in session.product_upload_paths_json]
+        path = storage.session_asset_path(session.id, "product_reference.png")
+        await image_service.generate_image(prompt, input_paths, str(path))
+        results["product_ref_path"] = storage.relative_path(path)
+
+    await asyncio.gather(
+        generate_character_reference(),
+        generate_environment_references(),
+        generate_product_reference(),
+    )
+    return results
+
+
+def _stored_file_exists(storage: StorageService, relative_path: str | None) -> bool:
+    if not relative_path:
+        return False
+    return storage.path_from_relative(relative_path).is_file()

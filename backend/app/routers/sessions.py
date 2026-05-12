@@ -2,6 +2,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -41,6 +42,11 @@ def create_session(payload: AdSessionCreate, db: Session = Depends(get_db)) -> A
     return session
 
 
+@router.get("/sessions", response_model=list[AdSessionRead])
+def list_sessions(db: Session = Depends(get_db)) -> list[AdSession]:
+    return list(db.scalars(select(AdSession).order_by(AdSession.updated_at.desc())))
+
+
 @router.get("/sessions/{session_id}", response_model=AdSessionRead)
 def get_session(session_id: int, db: Session = Depends(get_db)) -> AdSession:
     session = db.get(AdSession, session_id)
@@ -68,6 +74,15 @@ def update_session(session_id: int, payload: AdSessionUpdate, db: Session = Depe
     db.commit()
     db.refresh(session)
     return session
+
+
+@router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_session(session_id: int, db: Session = Depends(get_db)) -> None:
+    session = db.get(AdSession, session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    db.delete(session)
+    db.commit()
 
 
 @router.post("/sessions/{session_id}/upload-product-images", response_model=AdSessionRead)

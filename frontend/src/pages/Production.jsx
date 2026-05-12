@@ -1,21 +1,25 @@
-import { useEffect, useMemo, useState } from "react"
+import React, { useEffect, useState } from "react"
 
 import { fileUrl } from "../api/client.js"
 import { listPersonas } from "../api/personas.js"
-import { getProductionJob, getProductionScenes, retryScene, sceneDownloadUrl, startProduction } from "../api/production.js"
+import { getProductionJob, getProductionScenes, listProductionJobs, retryScene, sceneDownloadUrl, startProduction } from "../api/production.js"
 import { getSession } from "../api/sessions.js"
+import ErrorPanel from "../components/ErrorPanel.jsx"
+import ProgressBar from "../components/ProgressBar.jsx"
 import StatusBadge from "../components/StatusBadge.jsx"
 
 export default function Production() {
   const [session, setSession] = useState(null)
   const [persona, setPersona] = useState(null)
   const [job, setJob] = useState(null)
+  const [jobs, setJobs] = useState([])
   const [scenes, setScenes] = useState([])
   const [pageError, setPageError] = useState("")
   const [isStarting, setIsStarting] = useState(false)
 
   useEffect(() => {
     loadActiveSession()
+    loadProductionJobs()
   }, [])
 
   useEffect(() => {
@@ -53,6 +57,30 @@ export default function Production() {
     }
   }
 
+  async function loadProductionJobs() {
+    try {
+      setJobs(await listProductionJobs())
+    } catch (error) {
+      setPageError(error.message)
+    }
+  }
+
+  async function loadProductionJob(jobId) {
+    try {
+      const selectedJob = await getProductionJob(jobId)
+      const loadedSession = await getSession(selectedJob.session_id)
+      const personas = await listPersonas()
+      setJob(selectedJob)
+      setSession(loadedSession)
+      setPersona(personas.find((item) => item.id === loadedSession.persona_id) || null)
+      setScenes(await getProductionScenes(selectedJob.id))
+      window.localStorage.setItem("ugclabs_active_session_id", String(selectedJob.session_id))
+      setPageError("")
+    } catch (error) {
+      setPageError(error.message)
+    }
+  }
+
   async function handleStartProduction() {
     if (!session) return
     setIsStarting(true)
@@ -61,6 +89,7 @@ export default function Production() {
       const createdJob = await startProduction(session.id)
       setJob(createdJob)
       setScenes(await getProductionScenes(createdJob.id))
+      await loadProductionJobs()
     } catch (error) {
       setPageError(error.message)
     } finally {
@@ -74,6 +103,7 @@ export default function Production() {
       const updatedScene = await retryScene(sceneId)
       setScenes((items) => items.map((scene) => (scene.id === updatedScene.id ? updatedScene : scene)))
       if (job) setJob(await getProductionJob(job.id))
+      await loadProductionJobs()
     } catch (error) {
       setPageError(error.message)
     }
@@ -84,7 +114,7 @@ export default function Production() {
       <div className="max-w-3xl">
         <p className="text-sm font-medium uppercase tracking-[0.18em] text-neutral-500">Production</p>
         <h1 className="mt-4 text-4xl font-semibold leading-tight text-neutral-950 sm:text-5xl">
-          Generate scene-level assets for editing in CapCut.
+          Generate scene-level assets
         </h1>
         <p className="mt-4 text-base leading-7 text-neutral-600">
           Production creates first-frame images, silent B-roll clips, voiceover audio, and downloadable scene ZIPs.
@@ -92,6 +122,8 @@ export default function Production() {
       </div>
 
       {pageError ? <ErrorPanel message={pageError} /> : null}
+
+      {jobs.length ? <ProductionHistory jobs={jobs} selectedJobId={job?.id} onSelect={loadProductionJob} /> : null}
 
       {!session ? (
         <div className="rounded-3xl border border-border bg-surface p-8 shadow-sm">
@@ -115,6 +147,31 @@ export default function Production() {
           <ScenePromptGrid onRetry={handleRetryScene} scenes={scenes} scriptScenes={scriptScenes} />
         </>
       )}
+    </section>
+  )
+}
+
+function ProductionHistory({ jobs, selectedJobId, onSelect }) {
+  return (
+    <section className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-neutral-950">Previous Generations</h2>
+          <p className="mt-1 text-sm text-neutral-600">{jobs.length} saved production session{jobs.length === 1 ? "" : "s"}</p>
+        </div>
+        <select
+          className="rounded-xl border border-border bg-white px-4 py-3 text-sm outline-none transition focus:border-border-strong"
+          onChange={(event) => event.target.value && onSelect(event.target.value)}
+          value={selectedJobId || ""}
+        >
+          <option value="">Select generation</option>
+          {jobs.map((item) => (
+            <option key={item.id} value={item.id}>
+              Job {item.id} · Session {item.session_id} · {item.status}
+            </option>
+          ))}
+        </select>
+      </div>
     </section>
   )
 }
@@ -184,11 +241,8 @@ function ProgressPanel({ job, scenes }) {
         </div>
         <StatusBadge status={job.status} />
       </div>
-      <div className="mt-5 flex items-center gap-4">
-        <div className="h-2 flex-1 overflow-hidden rounded-full bg-surface-muted">
-          <div className="h-full rounded-full bg-neutral-950 transition-all" style={{ width: `${job.progress_percent || 0}%` }} />
-        </div>
-        <span className="text-sm font-medium text-neutral-700">{job.progress_percent || 0}%</span>
+      <div className="mt-5">
+        <ProgressBar value={job.progress_percent || 0} />
       </div>
       {job.error_message ? <p className="mt-4 rounded-2xl bg-red-50 p-3 text-sm text-red-800">{job.error_message}</p> : null}
       <p className="mt-3 text-sm text-neutral-600">{scenes.length} scene rows created.</p>
@@ -305,8 +359,4 @@ function SummaryLine({ label, value }) {
       <span className="font-semibold text-neutral-950">{label}:</span> {value}
     </p>
   )
-}
-
-function ErrorPanel({ message }) {
-  return <div className="rounded-3xl border border-red-100 bg-red-50 p-5 text-sm leading-6 text-red-800">{message}</div>
 }

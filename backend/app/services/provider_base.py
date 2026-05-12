@@ -134,6 +134,8 @@ class ProviderService:
             data = {}
 
         message = data.get("error", {}).get("message") if isinstance(data.get("error"), dict) else None
+        if not message and isinstance(data.get("message"), str):
+            message = data["message"]
         return message or f"{self.provider_name} {operation} failed with HTTP {response.status_code}."
 
 

@@ -1,9 +1,12 @@
+import asyncio
 from datetime import datetime, timezone
 from typing import Any
 
+from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.database import SessionLocal
 from app.errors import ProviderError
 from app.models import AdSession, Persona, ProductionJob, Scene, Status
@@ -15,6 +18,9 @@ from app.services.openai_llm_service import OpenAILLMService
 from app.services.prompt_renderer import PromptRenderer
 from app.services.storage_service import StorageService
 from app.services.zip_service import ZipService
+
+SCENE_FRAME_SIZE = "1024x1536"
+SCENE_FRAME_ASPECT_RATIO = 9 / 16
 
 
 async def run_production_prompt_job(job_id: int) -> None:
@@ -38,18 +44,20 @@ async def _run_production_prompt_job(db: Session, job_id: int) -> None:
         db.commit()
         return
 
-    persona = db.get(Persona, session.persona_id)
     scenes = list(db.scalars(select(Scene).where(Scene.job_id == job.id).order_by(Scene.scene_number)))
     job.status = Status.running
     job.current_step = "Generating scene assets"
     job.started_at = datetime.now(timezone.utc)
     db.commit()
 
-    product_revealed = False
-    for scene in scenes:
-        product_revealed = product_revealed or is_product_revealed(session, scene)
-        await process_scene_assets(db, job, session, persona, scene, product_revealed)
-        update_job_progress(db, job)
+    concurrency = max(1, get_settings().production_scene_concurrency)
+    semaphore = asyncio.Semaphore(concurrency)
+    await asyncio.gather(*(process_scene_assets_for_job(job.id, scene.id, semaphore) for scene in scenes))
+
+    db.expire_all()
+    job = db.get(ProductionJob, job_id)
+    if job is None:
+        return
 
     job.completed_at = datetime.now(timezone.utc)
     failed = count_failed_scenes(db, job.id)
@@ -62,6 +70,30 @@ async def _run_production_prompt_job(db: Session, job_id: int) -> None:
         job.error_message = None
     job.current_step = "Completed" if job.status == Status.completed else "Failed"
     db.commit()
+
+
+async def process_scene_assets_for_job(job_id: int, scene_id: int, semaphore: asyncio.Semaphore) -> None:
+    async with semaphore:
+        db = SessionLocal()
+        try:
+            scene = db.get(Scene, scene_id)
+            job = db.get(ProductionJob, job_id)
+            if scene is None or job is None:
+                return
+
+            session = db.get(AdSession, scene.session_id)
+            if session is None:
+                scene.status = Status.failed
+                scene.error_message = "Session was deleted before scene asset generation started."
+                db.commit()
+                return
+
+            persona = db.get(Persona, session.persona_id)
+            product_revealed = is_product_revealed_by_scene_number(session, scene.scene_number)
+            await process_scene_assets(db, job, session, persona, scene, product_revealed)
+            update_job_progress(db, job)
+        finally:
+            db.close()
 
 
 async def retry_scene_asset_generation(scene_id: int) -> None:
@@ -184,7 +216,8 @@ async def ensure_first_frame(
         input_images.append(str(storage.path_from_relative(session.product_ref_path)))
 
     output_path = storage.scene_asset_path(job.id, scene.scene_number, "first_frame.png")
-    await OpenAIImageService().generate_image(scene.image_prompt, input_images, str(output_path), db=db)
+    await OpenAIImageService().generate_image(scene.image_prompt, input_images, str(output_path), db=db, size=SCENE_FRAME_SIZE)
+    normalize_scene_frame(output_path)
     scene.first_frame_path = storage.relative_path(output_path)
     db.commit()
     update_job_progress(db, job)
@@ -288,6 +321,31 @@ def is_product_revealed_by_scene_number(session: AdSession, scene_number: int) -
         if (product_name and product_name in text) or index >= 3:
             return scene_number >= index
     return scene_number >= 3
+
+
+def normalize_scene_frame(path) -> None:
+    with Image.open(path) as image:
+        normalized = image.convert("RGB")
+        width, height = normalized.size
+        if width <= 0 or height <= 0:
+            return
+
+        current_ratio = width / height
+        if abs(current_ratio - SCENE_FRAME_ASPECT_RATIO) < 0.001:
+            normalized.save(path)
+            return
+
+        if current_ratio > SCENE_FRAME_ASPECT_RATIO:
+            target_width = round(height * SCENE_FRAME_ASPECT_RATIO)
+            left = max((width - target_width) // 2, 0)
+            normalized = normalized.crop((left, 0, left + target_width, height))
+        else:
+            target_height = round(width / SCENE_FRAME_ASPECT_RATIO)
+            top = max((height - target_height) // 2, 0)
+            normalized = normalized.crop((0, top, width, top + target_height))
+
+        normalized = normalized.resize((1024, 1792), Image.Resampling.LANCZOS)
+        normalized.save(path)
 
 
 def build_scene_prompt_context(

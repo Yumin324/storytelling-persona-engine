@@ -1,3 +1,5 @@
+import React from "react"
+
 export default function TopNav({ tabs, activeTab, onTabChange }) {
   return (
     <header className="border-b border-border bg-background/95">

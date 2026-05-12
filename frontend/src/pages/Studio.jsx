@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useState } from "react"
+import React, { useEffect, useMemo, useState } from "react"
 
 import { fileUrl } from "../api/client.js"
 import { listPersonas } from "../api/personas.js"
 import {
   createSession,
+  deleteSession,
   generateReferences,
   generateScript,
   getReferenceJob,
   getSession,
+  listSessions,
   saveScript,
   updateSession,
   uploadProductImages,
@@ -73,6 +75,7 @@ const initialProduct = {
 
 export default function Studio({ onNavigate }) {
   const [personas, setPersonas] = useState([])
+  const [savedSessions, setSavedSessions] = useState([])
   const [selectedPersona, setSelectedPersona] = useState(null)
   const [session, setSession] = useState(null)
   const [outfit, setOutfit] = useState("")
@@ -85,10 +88,13 @@ export default function Studio({ onNavigate }) {
   const [isSaving, setIsSaving] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [isGeneratingScript, setIsGeneratingScript] = useState(false)
+  const [isLoadingSession, setIsLoadingSession] = useState(false)
+  const [deletingSessionId, setDeletingSessionId] = useState(null)
   const [pageError, setPageError] = useState("")
 
   useEffect(() => {
     loadPersonas()
+    loadSessions()
   }, [])
 
   useEffect(() => {
@@ -109,9 +115,9 @@ export default function Studio({ onNavigate }) {
     return () => window.clearInterval(timer)
   }, [referenceJob, session])
 
-  const completedPersonas = useMemo(() => personas.filter((persona) => persona.status === "completed"), [personas])
   const scriptWarnings = useMemo(() => validateScriptDraft(scriptDraft, Number(product.number_of_scenes)), [scriptDraft, product.number_of_scenes])
   const canContinueToProduction = Boolean(scriptDraft) && scriptWarnings.length === 0
+  const selectedPersonaReadyForReferences = selectedPersona?.status === "completed" && selectedPersona?.reference_sheet_path
 
   async function loadPersonas() {
     try {
@@ -121,17 +127,90 @@ export default function Studio({ onNavigate }) {
     }
   }
 
+  async function loadSessions() {
+    try {
+      setSavedSessions(await listSessions())
+    } catch (error) {
+      setPageError(error.message)
+    }
+  }
+
+  function applySession(loadedSession, personaList = personas) {
+    const loadedProduct = hydrateProduct(loadedSession.product_json || {})
+
+    setSession(loadedSession)
+    setSelectedPersona(personaList.find((persona) => persona.id === loadedSession.persona_id) || null)
+    setOutfit(loadedSession.outfit || "")
+    setAccessories(loadedSession.accessories_json || [])
+    setEnvironment({ ...initialEnvironment, ...(loadedSession.environment_json || {}) })
+    setProduct(loadedProduct)
+    setUploadFiles([])
+    setReferenceJob(null)
+    setScriptDraft(loadedSession.script_json)
+    rememberSession(loadedSession.id)
+  }
+
+  async function handleLoadSession(sessionId) {
+    if (!sessionId) return
+    setIsLoadingSession(true)
+    setPageError("")
+    try {
+      const [loadedSession, loadedPersonas] = await Promise.all([getSession(sessionId), listPersonas()])
+      setPersonas(loadedPersonas)
+      applySession(loadedSession, loadedPersonas)
+    } catch (error) {
+      setPageError(error.message)
+    } finally {
+      setIsLoadingSession(false)
+    }
+  }
+
+  async function handleDeleteSession(sessionId) {
+    if (!window.confirm("Delete this saved session?")) return
+    setDeletingSessionId(sessionId)
+    setPageError("")
+    try {
+      await deleteSession(sessionId)
+      setSavedSessions((items) => items.filter((item) => item.id !== sessionId))
+      if (session?.id === sessionId) {
+        resetSessionForm()
+      }
+    } catch (error) {
+      setPageError(error.message)
+    } finally {
+      setDeletingSessionId(null)
+    }
+  }
+
+  function resetSessionForm() {
+    setSession(null)
+    setSelectedPersona(null)
+    setOutfit("")
+    setAccessories([])
+    setEnvironment(initialEnvironment)
+    setProduct(initialProduct)
+    setUploadFiles([])
+    setReferenceJob(null)
+    setScriptDraft(null)
+    window.localStorage.removeItem("ugclabs_active_session_id")
+  }
+
   async function handlePersonaSelect(persona) {
     setSelectedPersona(persona)
     setPageError("")
     if (!session) return
+    try {
       const updated = await updateSession(session.id, { persona_id: persona.id })
       setSession(updated)
       setScriptDraft(updated.script_json)
+      await loadSessions()
+    } catch (error) {
+      setPageError(error.message)
+    }
   }
 
   async function saveSession() {
-    if (!selectedPersona) throw new Error("Select a completed persona first.")
+    if (!selectedPersona) throw new Error("Select a persona first.")
     const payload = {
       persona_id: selectedPersona.id,
       outfit,
@@ -144,12 +223,14 @@ export default function Studio({ onNavigate }) {
       setSession(updated)
       setScriptDraft(updated.script_json)
       rememberSession(updated.id)
+      await loadSessions()
       return updated
     }
     const created = await createSession(payload)
     setSession(created)
     setScriptDraft(created.script_json)
     rememberSession(created.id)
+    await loadSessions()
     return created
   }
 
@@ -174,6 +255,7 @@ export default function Studio({ onNavigate }) {
       setSession(updated)
       setScriptDraft(updated.script_json)
       setUploadFiles([])
+      await loadSessions()
     } catch (error) {
       setPageError(error.message)
     } finally {
@@ -189,6 +271,7 @@ export default function Studio({ onNavigate }) {
       const job = await generateReferences(currentSession.id)
       setReferenceJob(job)
       setSession(await getSession(currentSession.id))
+      await loadSessions()
     } catch (error) {
       setPageError(error.message)
     } finally {
@@ -204,6 +287,7 @@ export default function Studio({ onNavigate }) {
       const updated = await generateScript(currentSession.id)
       setSession(updated)
       setScriptDraft(updated.script_json)
+      await loadSessions()
     } catch (error) {
       setPageError(error.message)
     } finally {
@@ -219,6 +303,7 @@ export default function Studio({ onNavigate }) {
       const updated = await saveScript(session.id, scriptDraft)
       setSession(updated)
       setScriptDraft(updated.script_json)
+      await loadSessions()
     } catch (error) {
       setPageError(error.message)
     } finally {
@@ -237,14 +322,25 @@ export default function Studio({ onNavigate }) {
         {pageError ? <ErrorPanel message={pageError} /> : null}
 
         <div className="mt-8 grid gap-5">
+          <Section title="Saved Sessions">
+            <SavedSessionPicker
+              activeSessionId={session?.id}
+              deletingSessionId={deletingSessionId}
+              isLoading={isLoadingSession}
+              onDelete={handleDeleteSession}
+              onLoad={handleLoadSession}
+              sessions={savedSessions}
+            />
+          </Section>
+
           <Section title="Choose Influencer">
-            {completedPersonas.length === 0 ? (
+            {personas.length === 0 ? (
               <p className="text-sm leading-6 text-neutral-600">
-                Complete a persona in Persona Bank before configuring a Studio session.
+                Create a persona in Persona Bank before configuring a Studio session.
               </p>
             ) : (
               <div className="grid gap-4 md:grid-cols-2">
-                {completedPersonas.map((persona) => (
+                {personas.map((persona) => (
                   <PersonaPickCard
                     isSelected={selectedPersona?.id === persona.id}
                     key={persona.id}
@@ -402,9 +498,19 @@ export default function Studio({ onNavigate }) {
           <p className="mt-3 text-sm leading-6 text-neutral-600">{referenceJob.current_step || referenceJob.status}</p>
         ) : null}
         {session?.error_message ? <p className="mt-3 rounded-2xl bg-red-50 p-3 text-sm text-red-800">{session.error_message}</p> : null}
+        {selectedPersona && !selectedPersonaReadyForReferences ? (
+          <p className="mt-3 text-sm leading-6 text-neutral-600">
+            Script generation can use this persona now. Reference generation unlocks after persona assets complete.
+          </p>
+        ) : null}
         <button
           className="mt-6 w-full rounded-full bg-neutral-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:bg-neutral-300"
-          disabled={isSaving || referenceJob?.status === "running" || referenceJob?.status === "queued"}
+          disabled={
+            isSaving ||
+            referenceJob?.status === "running" ||
+            referenceJob?.status === "queued" ||
+            !selectedPersonaReadyForReferences
+          }
           onClick={handleGenerateReferences}
           type="button"
         >
@@ -499,13 +605,76 @@ function ScriptEditor({ script, setScript }) {
   )
 }
 
+function SavedSessionPicker({ sessions, activeSessionId, isLoading, deletingSessionId, onLoad, onDelete }) {
+  if (sessions.length === 0) {
+    return <p className="text-sm leading-6 text-neutral-600">No saved sessions yet.</p>
+  }
+
+  return (
+    <div className="grid gap-3">
+      {sessions.map((savedSession) => {
+        const productName = savedSession.product_json?.name || "Untitled session"
+        const isActive = activeSessionId === savedSession.id
+        const isDeleting = deletingSessionId === savedSession.id
+
+        return (
+          <article
+            className={`rounded-2xl border bg-surface-muted p-4 ${isActive ? "border-neutral-950" : "border-border"}`}
+            key={savedSession.id}
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="font-semibold text-neutral-950">{productName}</h3>
+                <p className="mt-1 text-sm text-neutral-600">
+                  Session #{savedSession.id} · {formatDateTime(savedSession.updated_at)}
+                </p>
+              </div>
+              <StatusBadge status={savedSession.status} />
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                className="rounded-full bg-neutral-950 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-neutral-300"
+                disabled={isLoading}
+                onClick={() => onLoad(savedSession.id)}
+                type="button"
+              >
+                {isActive ? "Loaded" : "Load"}
+              </button>
+              <button
+                className="rounded-full border border-red-100 bg-white px-4 py-2 text-sm font-medium text-red-700 disabled:cursor-not-allowed disabled:text-neutral-400"
+                disabled={isDeleting}
+                onClick={() => onDelete(savedSession.id)}
+                type="button"
+              >
+                {isDeleting ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </article>
+        )
+      })}
+    </div>
+  )
+}
+
 function PersonaPickCard({ persona, isSelected, onSelect }) {
+  const thumbnail = fileUrl(persona.base_image_path)
+  const isReadyForReferences = persona.status === "completed" && persona.reference_sheet_path
+
   return (
     <article className={`rounded-3xl border bg-surface p-4 shadow-sm ${isSelected ? "border-neutral-950" : "border-border"}`}>
       <div className="flex gap-4">
-        <img alt={`${persona.name} avatar`} className="h-20 w-20 rounded-2xl object-cover" src={fileUrl(persona.base_image_path)} />
+        {thumbnail ? (
+          <img alt={`${persona.name} avatar`} className="h-20 w-20 rounded-2xl object-cover" src={thumbnail} />
+        ) : (
+          <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-surface-muted text-center text-xs text-neutral-500">
+            Avatar pending
+          </div>
+        )}
         <div className="min-w-0 flex-1">
-          <h2 className="font-semibold text-neutral-950">{persona.name}</h2>
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <h2 className="font-semibold text-neutral-950">{persona.name}</h2>
+            <StatusBadge status={persona.status} />
+          </div>
           <p className="mt-1 text-sm text-neutral-600">
             {persona.gender}, {persona.age}
           </p>
@@ -514,6 +683,11 @@ function PersonaPickCard({ persona, isSelected, onSelect }) {
           </p>
         </div>
       </div>
+      {!isReadyForReferences ? (
+        <p className="mt-3 text-xs leading-5 text-neutral-500">
+          Available for scripts now. Complete persona assets before generating references.
+        </p>
+      ) : null}
       <button className="mt-4 rounded-full bg-neutral-950 px-4 py-2 text-sm font-medium text-white" onClick={onSelect} type="button">
         {isSelected ? "Selected" : "Select"}
       </button>
@@ -636,6 +810,26 @@ function normalizedProduct(product) {
     number_of_scenes: Number(product.number_of_scenes),
     cta: product.cta === "Custom" ? product.custom_cta : product.cta,
   }
+}
+
+function hydrateProduct(product) {
+  const cta = product.cta || initialProduct.cta
+  const isKnownCta = ctaOptions.includes(cta)
+
+  return {
+    ...initialProduct,
+    ...product,
+    cta: isKnownCta ? cta : "Custom",
+    custom_cta: isKnownCta ? product.custom_cta || "" : cta,
+  }
+}
+
+function formatDateTime(value) {
+  if (!value) return "Unknown update"
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value))
 }
 
 function labelize(value) {

@@ -8,6 +8,10 @@ export function getProductionJob(jobId) {
   return apiRequest(`/api/production/jobs/${jobId}`)
 }
 
+export function listProductionJobs() {
+  return apiRequest("/api/production/jobs")
+}
+
 export function getProductionScenes(jobId) {
   return apiRequest(`/api/production/jobs/${jobId}/scenes`)
 }

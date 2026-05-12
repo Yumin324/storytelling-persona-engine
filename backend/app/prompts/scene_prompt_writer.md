@@ -38,6 +38,8 @@ Product:
 
 Image prompt:
 - Generate a first frame for GPT Image 2.0.
+- The first frame must be vertical 9:16 for short-form video.
+- Compose all important subject, product, hands, and readable packaging inside a 9:16 safe frame.
 - Use phone-shot UGC B-roll realism.
 - Use iPhone 14 Pro or iPhone 15 Pro visual language.
 - Keep character, environment, and product visually consistent with reference sheets.
@@ -48,6 +50,7 @@ Image prompt:
 
 Video prompt:
 - Generate an 8-second silent Kling 3.0 image-to-video clip.
+- Preserve the input frame as a vertical 9:16 clip. Do not crop, rotate, letterbox, or change aspect ratio.
 - Natural handheld phone movement.
 - Slow movement only.
 - No fast sudden movement.

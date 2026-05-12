@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import React, { useEffect, useMemo, useState } from "react"
 
 import StatusBadge from "../components/StatusBadge.jsx"
 import { fileUrl } from "../api/client.js"
@@ -159,6 +159,11 @@ export default function PersonaBank() {
       setVoices(await listVoices())
       setVoiceError("")
     } catch (error) {
+      if (isMissingElevenLabsKeyError(error)) {
+        setVoices([])
+        setVoiceError("")
+        return
+      }
       setVoiceError(error.message)
     }
   }
@@ -184,7 +189,7 @@ export default function PersonaBank() {
           voice_id: form.voice_id,
           voice_name: selectedVoice?.name || form.voice_name,
           provider: "elevenlabs",
-          gender_category: form.voice_gender_category,
+          gender_category: form.gender,
           voice_settings: {
             stability: 0.5,
             similarity_boost: 0.75,
@@ -296,6 +301,8 @@ function PersonaForm({
   voiceError,
   voices,
 }) {
+  const selectedVoice = filteredVoices.find((voice) => voice.voice_id === form.voice_id)
+
   return (
     <form className="grid gap-5" onSubmit={onSubmit}>
       <Stepper />
@@ -314,7 +321,7 @@ function PersonaForm({
             label="Gender"
             value={form.gender}
             options={["Female", "Male"]}
-            onChange={(gender) => onChange({ ...form, gender })}
+            onChange={(gender) => onChange({ ...form, gender, voice_id: "" })}
           />
         </div>
       </FormSection>
@@ -351,7 +358,7 @@ function PersonaForm({
             </button>
           </div>
         ) : null}
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4">
           <SelectInput
             label="ElevenLabs Voice"
             value={form.voice_id}
@@ -362,12 +369,7 @@ function PersonaForm({
             placeholder={voices.length ? "Select a voice" : "No voices loaded"}
             onChange={(voice_id) => onChange({ ...form, voice_id })}
           />
-          <SelectInput
-            label="Manual Voice Gender Category"
-            value={form.voice_gender_category}
-            options={["Female", "Male", "Neutral", "Unknown"]}
-            onChange={(voice_gender_category) => onChange({ ...form, voice_gender_category })}
-          />
+          <VoicePreview voice={selectedVoice} />
         </div>
       </FormSection>
 
@@ -404,6 +406,29 @@ function PersonaForm({
         </button>
       </div>
     </form>
+  )
+}
+
+function VoicePreview({ voice }) {
+  if (!voice) return null
+
+  if (!voice.preview_url) {
+    return (
+      <p className="rounded-2xl border border-border bg-surface-muted p-4 text-sm text-neutral-600">
+        No preview is available for this voice.
+      </p>
+    )
+  }
+
+  return (
+    <div className="rounded-2xl border border-border bg-surface-muted p-4">
+      <p className="mb-3 text-sm font-medium text-neutral-800">
+        Preview {voice.name || "selected voice"}
+      </p>
+      <audio className="w-full" controls preload="none" src={voice.preview_url}>
+        Your browser does not support audio previews.
+      </audio>
+    </div>
   )
 }
 
@@ -576,7 +601,6 @@ function createInitialForm() {
     distinguishing_features: ["None"],
     voice_id: "",
     voice_name: "",
-    voice_gender_category: "Unknown",
     personality: initialPersonality,
   }
 }
@@ -588,6 +612,10 @@ function validateForm(form) {
   if (!form.personality.values.length || form.personality.values.length > 2) {
     throw new Error("Choose one or two persona values.")
   }
+}
+
+function isMissingElevenLabsKeyError(error) {
+  return error.message.includes("ELEVENLABS_API_KEY is missing")
 }
 
 function labelize(value) {

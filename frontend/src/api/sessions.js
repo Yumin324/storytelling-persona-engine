@@ -7,6 +7,10 @@ export function createSession(payload) {
   })
 }
 
+export function listSessions() {
+  return apiRequest("/api/sessions")
+}
+
 export function getSession(sessionId) {
   return apiRequest(`/api/sessions/${sessionId}`)
 }
@@ -16,6 +20,10 @@ export function updateSession(sessionId, payload) {
     method: "PUT",
     body: JSON.stringify(payload),
   })
+}
+
+export function deleteSession(sessionId) {
+  return apiRequest(`/api/sessions/${sessionId}`, { method: "DELETE" })
 }
 
 export async function uploadProductImages(sessionId, files) {

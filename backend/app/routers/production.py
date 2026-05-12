@@ -47,6 +47,11 @@ def start_production(
     return job
 
 
+@router.get("/production/jobs", response_model=list[ProductionJobRead])
+def list_production_jobs(db: Session = Depends(get_db)) -> list[ProductionJob]:
+    return list(db.scalars(select(ProductionJob).order_by(ProductionJob.created_at.desc())))
+
+
 @router.get("/production/jobs/{job_id}", response_model=ProductionJobRead)
 def get_production_job(job_id: int, db: Session = Depends(get_db)) -> ProductionJob:
     job = db.get(ProductionJob, job_id)
