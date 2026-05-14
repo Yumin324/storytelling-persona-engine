@@ -40,8 +40,10 @@ OPENAI_LLM_MODEL=gpt-5.2
 OPENAI_IMAGE_MODEL=gpt-image-2
 
 KLING_API_KEY=
+KLING_ACCESS_KEY=
+KLING_SECRET_KEY=
 KLING_API_BASE_URL=
-KLING_VIDEO_MODEL=kling-3.0
+KLING_VIDEO_MODEL=kling-v3
 
 ELEVENLABS_API_KEY=
 ELEVENLABS_DEFAULT_MODEL=
@@ -52,9 +54,20 @@ API_TIMEOUT_VIDEO_CREATE_SECONDS=120
 API_TIMEOUT_VIDEO_POLL_TOTAL_SECONDS=1200
 API_TIMEOUT_VOICE_SECONDS=120
 API_RETRY_COUNT=3
+PRODUCTION_SCENE_CONCURRENCY=2
 ```
 
 The app shows a setup warning when provider keys are missing. `/api/health` also reports missing config and checks that `.env.example` contains the required variables.
+
+Optional frontend override:
+
+```env
+VITE_API_BASE_URL=http://127.0.0.1:8000
+```
+
+The frontend defaults to `http://127.0.0.1:8000` when this is not set.
+
+Do not commit real `.env` files, API keys, generated SQLite databases, provider outputs, logs, or build artifacts.
 
 ## Run App
 
@@ -106,6 +119,34 @@ Frontend URL when running separately:
 ```txt
 http://127.0.0.1:5173
 ```
+
+## Scripts
+
+Repository root:
+
+```bash
+npm run dev
+```
+
+Frontend:
+
+```bash
+cd frontend
+npm install
+npm run dev
+npm run build
+npm run preview
+```
+
+Backend:
+
+```bash
+cd backend
+python -m pytest tests
+python -c "from app.main import app; print(app.title)"
+```
+
+There is currently no configured lint command or root-level build/test command.
 
 ## Demo Walkthrough
 
@@ -205,6 +246,7 @@ git check-ignore backend/storage/jobs/1/scene_01/video.mp4
 Secret scan:
 
 ```bash
-rg --hidden --glob '!README.md' --glob '!docs/**' "OPENAI_API_KEY=\S|KLING_API_KEY=\S|ELEVENLABS_API_KEY=\S"
-rg --hidden --glob '!frontend/package-lock.json' "sk-[A-Za-z0-9]{20,}"
+rg --hidden --glob '!backend/.env' --glob '!**/.git/**' "OPENAI_API_KEY=\S|KLING_API_KEY=\S|KLING_ACCESS_KEY=\S|KLING_SECRET_KEY=\S|ELEVENLABS_API_KEY=\S"
+rg --hidden --glob '!backend/.env' --glob '!**/.git/**' --glob '!frontend/package-lock.json' "sk-[A-Za-z0-9_-]{20,}"
+rg --hidden --glob '!backend/.env' --glob '!**/.git/**' -- "-----BEGIN [A-Z ]*PRIVATE KEY-----"
 ```
