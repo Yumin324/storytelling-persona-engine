@@ -1,7 +1,6 @@
 from dataclasses import asdict
-from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -65,6 +64,8 @@ def update_session(session_id: int, payload: AdSessionUpdate, db: Session = Depe
     if "persona_id" in updates and db.get(Persona, updates["persona_id"]) is None:
         raise HTTPException(status_code=404, detail="Persona not found.")
 
+    invalidate_stale_references(session, updates)
+
     for key, value in updates.items():
         setattr(session, key, value)
 
@@ -115,6 +116,41 @@ async def upload_product_images(
         saved_paths.append(storage.relative_path(path))
 
     session.product_upload_paths_json = existing_paths + saved_paths
+    clear_stored_asset(storage, session.product_ref_path)
+    session.product_ref_path = None
+    session.status = Status.draft
+    session.error_message = None
+    db.commit()
+    db.refresh(session)
+    return session
+
+
+@router.delete("/sessions/{session_id}/product-images", response_model=AdSessionRead)
+def remove_product_image(
+    session_id: int,
+    image_path: str = Query(..., min_length=1),
+    db: Session = Depends(get_db),
+) -> AdSession:
+    session = db.get(AdSession, session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+
+    existing_paths = list(session.product_upload_paths_json or [])
+    if image_path not in existing_paths:
+        raise HTTPException(status_code=404, detail="Product image not found on this session.")
+
+    storage = StorageService()
+    try:
+        stored_path = storage.path_from_relative(image_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid product image path.") from exc
+
+    if stored_path.is_file():
+        stored_path.unlink()
+
+    session.product_upload_paths_json = [path for path in existing_paths if path != image_path]
+    clear_stored_asset(storage, session.product_ref_path)
+    session.product_ref_path = None
     session.status = Status.draft
     session.error_message = None
     db.commit()
@@ -189,6 +225,39 @@ def update_script(session_id: int, payload: ScriptUpdate, db: Session = Depends(
     db.commit()
     db.refresh(session)
     return session
+
+
+def invalidate_stale_references(session: AdSession, updates: dict) -> None:
+    storage = StorageService()
+
+    if any(field_changed(session, updates, field) for field in ("persona_id", "outfit", "accessories_json")):
+        clear_stored_asset(storage, session.session_character_ref_path)
+        session.session_character_ref_path = None
+
+    if field_changed(session, updates, "environment_json"):
+        clear_stored_asset(storage, session.environment_base_path)
+        clear_stored_asset(storage, session.environment_ref_path)
+        session.environment_base_path = None
+        session.environment_ref_path = None
+
+    if any(field_changed(session, updates, field) for field in ("product_json", "product_upload_paths_json")):
+        clear_stored_asset(storage, session.product_ref_path)
+        session.product_ref_path = None
+
+
+def field_changed(session: AdSession, updates: dict, field_name: str) -> bool:
+    return field_name in updates and getattr(session, field_name) != updates[field_name]
+
+
+def clear_stored_asset(storage: StorageService, relative_path: str | None) -> None:
+    if not relative_path:
+        return
+    try:
+        path = storage.path_from_relative(relative_path)
+    except ValueError:
+        return
+    if path.is_file():
+        path.unlink()
 
 
 def validate_session_ready(session: AdSession, db: Session) -> None:

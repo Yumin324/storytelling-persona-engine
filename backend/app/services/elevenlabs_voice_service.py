@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 from typing import Any
 
 import httpx
@@ -12,6 +13,12 @@ from app.services.provider_base import ProviderService, ensure_output_path
 class ElevenLabsVoiceService(ProviderService):
     provider_name = "elevenlabs"
     base_url = "https://api.elevenlabs.io/v1"
+    default_voice_settings = {
+        "stability": 0.4,
+        "similarity_boost": 0.75,
+        "style": 0.55,
+        "use_speaker_boost": True,
+    }
 
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or get_settings()
@@ -66,22 +73,21 @@ class ElevenLabsVoiceService(ProviderService):
         text: str,
         voice_prompt: str,
         output_path: str,
+        voice_settings: dict[str, Any] | None = None,
         db: Session | None = None,
     ) -> str:
         operation = "text_to_speech"
         target_path = ensure_output_path(output_path)
+        speech_text = self._speech_text_with_expression(text, voice_prompt)
+        expressive_prompt_used = speech_text != text
+        resolved_voice_settings = self._voice_settings(voice_settings, expressive=expressive_prompt_used)
 
         async def call_elevenlabs() -> str:
             self._require_key(self.settings.elevenlabs_api_key, "ELEVENLABS_API_KEY", operation)
             try:
                 payload = {
-                    "text": text,
-                    "voice_settings": {
-                        "stability": 0.5,
-                        "similarity_boost": 0.75,
-                        "style": 0.2,
-                        "use_speaker_boost": True,
-                    },
+                    "text": speech_text,
+                    "voice_settings": resolved_voice_settings,
                     "apply_text_normalization": "auto",
                 }
                 if self.settings.elevenlabs_default_model:
@@ -120,8 +126,11 @@ class ElevenLabsVoiceService(ProviderService):
             request_summary={
                 "voice_id": voice_id,
                 "output_path": str(target_path),
-                "text_length": len(text),
+                "text_length": len(speech_text),
                 "voice_prompt_present": bool(voice_prompt),
+                "voice_prompt_used": expressive_prompt_used,
+                "voice_style": resolved_voice_settings["style"],
+                "voice_stability": resolved_voice_settings["stability"],
             },
             func=call_elevenlabs,
             retries=self.settings.api_retry_count,
@@ -129,6 +138,61 @@ class ElevenLabsVoiceService(ProviderService):
 
     def _headers(self) -> dict[str, str]:
         return {"xi-api-key": self.settings.elevenlabs_api_key}
+
+    @classmethod
+    def _voice_settings(cls, voice_settings: dict[str, Any] | None, expressive: bool) -> dict[str, Any]:
+        settings = dict(cls.default_voice_settings)
+        if isinstance(voice_settings, dict):
+            for key in ("stability", "similarity_boost", "style"):
+                value = voice_settings.get(key)
+                if isinstance(value, int | float):
+                    settings[key] = cls._clamp_float(value)
+            speaker_boost = voice_settings.get("use_speaker_boost")
+            if isinstance(speaker_boost, bool):
+                settings["use_speaker_boost"] = speaker_boost
+
+        if expressive:
+            settings["style"] = max(settings["style"], 0.55)
+            settings["stability"] = min(settings["stability"], 0.45)
+        return settings
+
+    @staticmethod
+    def _clamp_float(value: int | float) -> float:
+        return max(0.0, min(float(value), 1.0))
+
+    @classmethod
+    def _speech_text_with_expression(cls, text: str, voice_prompt: str) -> str:
+        clean_text = text.strip()
+        clean_prompt = voice_prompt.strip()
+        if not clean_prompt:
+            return clean_text
+        if cls._contains_words_in_order(clean_prompt, clean_text):
+            return clean_prompt
+        return clean_text
+
+    @classmethod
+    def _contains_words_in_order(cls, candidate: str, required_text: str) -> bool:
+        required_words = cls._spoken_words(required_text)
+        if not required_words:
+            return False
+
+        candidate_words = cls._spoken_words(cls._remove_audio_tags(candidate))
+        search_from = 0
+        for required_word in required_words:
+            try:
+                found_at = candidate_words.index(required_word, search_from)
+            except ValueError:
+                return False
+            search_from = found_at + 1
+        return True
+
+    @staticmethod
+    def _remove_audio_tags(text: str) -> str:
+        return re.sub(r"\[[^\]]+\]", " ", text)
+
+    @staticmethod
+    def _spoken_words(text: str) -> list[str]:
+        return re.findall(r"[a-z0-9]+(?:'[a-z0-9]+)?", text.casefold())
 
     @staticmethod
     def _normalize_voice(voice: dict[str, Any]) -> dict[str, Any]:

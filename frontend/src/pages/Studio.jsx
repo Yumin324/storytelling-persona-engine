@@ -10,6 +10,7 @@ import {
   getReferenceJob,
   getSession,
   listSessions,
+  removeProductImage,
   saveScript,
   updateSession,
   uploadProductImages,
@@ -263,6 +264,19 @@ export default function Studio({ onNavigate }) {
     }
   }
 
+  async function handleRemoveProductImage(imagePath) {
+    if (!session) return
+    setPageError("")
+    try {
+      const updated = await removeProductImage(session.id, imagePath)
+      setSession(updated)
+      setScriptDraft(updated.script_json)
+      await loadSessions()
+    } catch (error) {
+      setPageError(error.message)
+    }
+  }
+
   async function handleGenerateReferences() {
     setIsSaving(true)
     setPageError("")
@@ -417,7 +431,21 @@ export default function Studio({ onNavigate }) {
               </label>
               <div className="mt-3 flex flex-wrap gap-2">
                 {session?.product_upload_paths_json?.map((path) => (
-                  <img alt="Uploaded product" className="h-16 w-16 rounded-2xl object-cover" key={path} src={fileUrl(path)} />
+                  <div className="relative h-16 w-16" key={path}>
+                    <img
+                      alt="Uploaded product"
+                      className="h-16 w-16 rounded-2xl object-cover"
+                      src={cacheBustedFileUrl(path, session.updated_at)}
+                    />
+                    <button
+                      aria-label="Remove product image"
+                      className="absolute -right-1.5 -top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-neutral-950 text-sm font-semibold leading-none text-white shadow-sm transition hover:bg-red-700"
+                      onClick={() => handleRemoveProductImage(path)}
+                      type="button"
+                    >
+                      &times;
+                    </button>
+                  </div>
                 ))}
               </div>
               <button
@@ -709,7 +737,7 @@ function ReferenceGrid({ session }) {
         <div className="rounded-3xl border border-border bg-surface-muted p-3" key={label}>
           <p className="mb-3 text-sm font-medium text-neutral-800">{label}</p>
           {path ? (
-            <img alt={label} className="aspect-video w-full rounded-2xl object-cover" src={fileUrl(path)} />
+            <img alt={label} className="aspect-video w-full rounded-2xl object-cover" src={cacheBustedFileUrl(path, session.updated_at)} />
           ) : (
             <div className="flex aspect-video items-center justify-center rounded-2xl bg-white text-center text-sm text-neutral-500">
               Pending generation
@@ -838,6 +866,12 @@ function labelize(value) {
 
 function rememberSession(sessionId) {
   window.localStorage.setItem("ugclabs_active_session_id", String(sessionId))
+}
+
+function cacheBustedFileUrl(path, version) {
+  const url = fileUrl(path)
+  if (!url || !version) return url
+  return `${url}?v=${encodeURIComponent(version)}`
 }
 
 function countWords(text) {

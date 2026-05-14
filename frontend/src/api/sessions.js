@@ -43,6 +43,12 @@ export async function uploadProductImages(sessionId, files) {
   return response.json()
 }
 
+export function removeProductImage(sessionId, imagePath) {
+  return apiRequest(`/api/sessions/${sessionId}/product-images?image_path=${encodeURIComponent(imagePath)}`, {
+    method: "DELETE",
+  })
+}
+
 export function generateReferences(sessionId) {
   return apiRequest(`/api/sessions/${sessionId}/generate-references`, { method: "POST" })
 }

@@ -216,7 +216,8 @@ async def ensure_first_frame(
         input_images.append(str(storage.path_from_relative(session.product_ref_path)))
 
     output_path = storage.scene_asset_path(job.id, scene.scene_number, "first_frame.png")
-    await OpenAIImageService().generate_image(scene.image_prompt, input_images, str(output_path), db=db, size=SCENE_FRAME_SIZE)
+    image_prompt = apply_session_styling_to_image_prompt(session, scene.image_prompt or "")
+    await OpenAIImageService().generate_image(image_prompt, input_images, str(output_path), db=db, size=SCENE_FRAME_SIZE)
     normalize_scene_frame(output_path)
     scene.first_frame_path = storage.relative_path(output_path)
     db.commit()
@@ -254,6 +255,7 @@ async def ensure_voiceover(db: Session, job: ProductionJob, persona: Persona | N
     voice_id = (persona.voice_json or {}).get("voice_id") if persona else None
     if not voice_id:
         raise ValueError("Selected persona voice_id is required for voiceover generation.")
+    voice_settings = (persona.voice_json or {}).get("voice_settings") if persona else None
 
     storage = StorageService()
     output_path = storage.scene_asset_path(job.id, scene.scene_number, "voiceover.mp3")
@@ -262,6 +264,7 @@ async def ensure_voiceover(db: Session, job: ProductionJob, persona: Persona | N
         scene.script_voiceover,
         scene.voice_prompt or "",
         str(output_path),
+        voice_settings=voice_settings,
         db=db,
     )
     scene.voice_path = storage.relative_path(output_path)
@@ -346,6 +349,19 @@ def normalize_scene_frame(path) -> None:
 
         normalized = normalized.resize((1024, 1792), Image.Resampling.LANCZOS)
         normalized.save(path)
+
+
+def apply_session_styling_to_image_prompt(session: AdSession, image_prompt: str) -> str:
+    accessories = ", ".join(str(accessory) for accessory in (session.accessories_json or []) if str(accessory).strip())
+    styling_rules = [
+        "Required session styling:",
+        f"- Use the supplied session character reference image as the identity and styling source.",
+        f"- Outfit: {session.outfit or 'use the outfit shown in the session character reference'}.",
+        f"- Accessories: {accessories or 'none beyond the session character reference'}.",
+        "- Preserve these outfit and accessory choices in this first frame.",
+        "- Do not revert to the original persona outfit and do not omit selected accessories.",
+    ]
+    return f"{image_prompt}\n\n" + "\n".join(styling_rules)
 
 
 def build_scene_prompt_context(

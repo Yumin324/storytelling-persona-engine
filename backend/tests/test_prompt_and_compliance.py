@@ -1,4 +1,5 @@
 from app.services.compliance_service import ComplianceService
+from app.services.elevenlabs_voice_service import ElevenLabsVoiceService
 from app.services.prompt_renderer import PromptRenderer
 
 
@@ -123,3 +124,41 @@ def test_scene_prompt_json_shape_validation():
     output.pop("voice_prompt")
     errors = service.validate_scene_prompt_output(output)
     assert any("voice_prompt" in error for error in errors)
+
+
+def test_elevenlabs_uses_tagged_voice_prompt_when_script_is_preserved():
+    script = "A simple hydration step can make a morning routine feel easier."
+    tagged = "[warmly] A simple hydration step can make a morning routine feel easier."
+
+    assert ElevenLabsVoiceService._speech_text_with_expression(script, tagged) == tagged
+
+
+def test_elevenlabs_ignores_voice_prompt_that_does_not_include_script():
+    script = "A simple hydration step can make a morning routine feel easier."
+    old_style_prompt = "Natural clear delivery."
+
+    assert ElevenLabsVoiceService._speech_text_with_expression(script, old_style_prompt) == script
+
+
+def test_elevenlabs_raises_style_floor_for_expression_prompts():
+    settings = ElevenLabsVoiceService._voice_settings(
+        {
+            "stability": 0.8,
+            "similarity_boost": 0.7,
+            "style": 0.2,
+            "use_speaker_boost": False,
+        },
+        expressive=True,
+    )
+
+    assert settings["style"] == 0.55
+    assert settings["stability"] == 0.45
+    assert settings["similarity_boost"] == 0.7
+    assert settings["use_speaker_boost"] is False
+
+
+def test_elevenlabs_preserves_custom_style_without_expression_prompt():
+    settings = ElevenLabsVoiceService._voice_settings({"style": 0.2, "stability": 0.8}, expressive=False)
+
+    assert settings["style"] == 0.2
+    assert settings["stability"] == 0.8
